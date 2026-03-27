@@ -33,6 +33,12 @@ function StatCard({ title, children }: { title: string; children: React.ReactNod
   )
 }
 
+function fmtMonth(ym: string): string {
+  const [year, month] = ym.split('-')
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return `${names[parseInt(month, 10) - 1]} ${year}`
+}
+
 function BarRow({ label, value, max, extra }: { label: string; value: number; max: number; extra?: string }) {
   const pct = max > 0 ? (value / max) * 100 : 0
   return (
@@ -380,6 +386,27 @@ export default function TrendsPage() {
                       max={stats.platform_distribution[0].count}
                     />
                   ))}
+                </div>
+              </StatCard>
+
+              {/* Monthly distribution */}
+              <StatCard title="Monthly Distribution">
+                <div className="space-y-3">
+                  {stats.monthly_distribution.length === 0 ? (
+                    <p className="text-xs text-zinc-600 py-2">
+                      No start date data in this set. Try filtering by a specific date range to see monthly breakdowns.
+                    </p>
+                  ) : (
+                    stats.monthly_distribution.map(m => (
+                      <BarRow
+                        key={m.month}
+                        label={fmtMonth(m.month)}
+                        value={m.count}
+                        max={Math.max(...stats.monthly_distribution.map(x => x.count))}
+                        extra={`avg ${m.avg_days_active}d`}
+                      />
+                    ))
+                  )}
                 </div>
               </StatCard>
             </div>

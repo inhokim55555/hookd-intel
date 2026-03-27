@@ -154,5 +154,6 @@ export interface TrendStats {
   platform_distribution: Array<{ platform: string; count: number }>
   top_brands: Array<{ name: string; count: number; avg_days_active: number }>
   spend_distribution: Array<{ range: string; count: number; pct: number }>
+  monthly_distribution: Array<{ month: string; count: number; avg_days_active: number }>
   overall_avg_days_active: number
 }

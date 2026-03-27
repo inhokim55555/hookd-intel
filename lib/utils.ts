@@ -69,6 +69,7 @@ export function computeTrendStats(ads: Ad[]): TrendStats {
       platform_distribution: [],
       top_brands: [],
       spend_distribution: [],
+      monthly_distribution: [],
       overall_avg_days_active: 0,
     }
   }
@@ -146,6 +147,22 @@ export function computeTrendStats(ads: Ad[]): TrendStats {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10)
 
+  // Monthly distribution (group by start_date year-month)
+  const monthMap = new Map<string, { count: number; total_days: number }>()
+  ads.forEach(ad => {
+    if (!ad.start_date) return
+    const month = ad.start_date.slice(0, 7) // "YYYY-MM"
+    const existing = monthMap.get(month) ?? { count: 0, total_days: 0 }
+    monthMap.set(month, { count: existing.count + 1, total_days: existing.total_days + ad.days_active })
+  })
+  const monthly_distribution = Array.from(monthMap.entries())
+    .map(([month, { count, total_days }]) => ({
+      month,
+      count,
+      avg_days_active: Math.round(total_days / count),
+    }))
+    .sort((a, b) => a.month.localeCompare(b.month))
+
   // Spend distribution
   const spendMap = new Map<string, number>()
   ads.forEach(ad => {
@@ -168,6 +185,7 @@ export function computeTrendStats(ads: Ad[]): TrendStats {
     platform_distribution,
     top_brands,
     spend_distribution,
+    monthly_distribution,
     overall_avg_days_active,
   }
 }
@@ -184,22 +202,116 @@ export function getCachedCredits(): number | null {
   return val ? parseFloat(val) : null
 }
 
-export function markdownToHtml(text: string): string {
-  return text
-    .replace(/^#### (.+)$/gm, '<h4 class="text-base font-semibold text-zinc-100 mt-5 mb-2">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold text-white mt-6 mb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold text-white mt-8 mb-3 pb-2 border-b border-app-border">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold text-white mt-8 mb-4">$1</h1>')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="text-white font-bold"><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em class="text-zinc-300">$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="bg-surface-raised text-accent text-sm px-1.5 py-0.5 rounded font-mono">$1</code>')
-    .replace(/^---$/gm, '<hr class="border-app-border my-6" />')
-    .replace(/^- (.+)$/gm, '<li class="text-zinc-300 ml-5 list-disc mb-1">$1</li>')
-    .replace(/^\d+\. (.+)$/gm, '<li class="text-zinc-300 ml-5 list-decimal mb-1">$1</li>')
-    .replace(/(<li[\s\S]+?<\/li>(\n|$))+/g, (match) => `<ul class="my-3 space-y-1">${match}</ul>`)
-    .replace(/\n\n/g, '</p><p class="text-zinc-300 mb-4 leading-relaxed">')
-    .replace(/\n/g, '<br />')
-    .replace(/^/, '<p class="text-zinc-300 mb-4 leading-relaxed">')
-    .replace(/$/, '</p>')
+export function markdownToHtml(md: string): string {
+  // Inline formatting — applied inside block elements only
+  function inline(s: string): string {
+    return s
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="text-white font-bold"><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em class="text-zinc-300 italic">$1</em>')
+      .replace(/`([^`]+)`/g, '<code class="bg-surface-raised text-accent text-[13px] px-1.5 py-0.5 rounded font-mono">$1</code>')
+  }
+
+  // Pipe table renderer
+  function renderTable(block: string[]): string {
+    const parseRow = (line: string): string[] =>
+      line.split('|').slice(1, -1).map(c => c.trim())
+    const headers = parseRow(block[0])
+    const dataRows = block.slice(2).filter(l => l.trim().startsWith('|'))
+    const ths = headers
+      .map(h => `<th class="px-4 py-2.5 text-left text-[11px] font-semibold text-zinc-500 uppercase tracking-wide whitespace-nowrap border-b border-app-border">${inline(h)}</th>`)
+      .join('')
+    const trs = dataRows
+      .map((row, ri) => {
+        const tds = parseRow(row)
+          .map(c => `<td class="px-4 py-2.5 text-sm text-zinc-300 border-b border-app-border/40">${inline(c)}</td>`)
+          .join('')
+        return `<tr class="${ri % 2 === 1 ? 'bg-surface-raised/30' : ''}">${tds}</tr>`
+      })
+      .join('')
+    return `<div class="overflow-x-auto my-5 rounded-xl border border-app-border"><table class="w-full text-left border-collapse"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`
+  }
+
+  const lines = md.split('\n')
+  const out: string[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // blank line
+    if (!line.trim()) { i++; continue }
+
+    // headings
+    const hm = line.match(/^(#{1,4})\s+(.+)$/)
+    if (hm) {
+      const n = hm[1].length
+      const cls = [
+        'text-2xl font-bold text-white mt-8 mb-4',
+        'text-xl font-bold text-white mt-8 mb-3 pb-2 border-b border-app-border',
+        'text-lg font-semibold text-white mt-6 mb-2',
+        'text-base font-semibold text-zinc-100 mt-5 mb-1.5',
+      ][n - 1]
+      out.push(`<h${n} class="${cls}">${inline(hm[2])}</h${n}>`)
+      i++; continue
+    }
+
+    // horizontal rule
+    if (/^-{3,}$/.test(line.trim())) {
+      out.push('<hr class="border-app-border my-6" />')
+      i++; continue
+    }
+
+    // table — collect all contiguous pipe lines
+    if (line.trim().startsWith('|')) {
+      const block: string[] = []
+      while (i < lines.length && lines[i].trim().startsWith('|')) { block.push(lines[i]); i++ }
+      if (block.length >= 2) out.push(renderTable(block))
+      continue
+    }
+
+    // unordered list — collect consecutive items
+    if (/^[-*]\s/.test(line)) {
+      const items: string[] = []
+      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
+        const m = lines[i].match(/^[-*]\s+(.+)$/)
+        if (m) items.push(`<li class="mb-1">${inline(m[1])}</li>`)
+        i++
+      }
+      out.push(`<ul class="list-disc list-outside ml-5 my-3 space-y-0.5 text-zinc-300">${items.join('')}</ul>`)
+      continue
+    }
+
+    // ordered list — collect consecutive items
+    if (/^\d+\.\s/.test(line)) {
+      const items: string[] = []
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        const m = lines[i].match(/^\d+\.\s+(.+)$/)
+        if (m) items.push(`<li class="mb-1">${inline(m[1])}</li>`)
+        i++
+      }
+      out.push(`<ol class="list-decimal list-outside ml-5 my-3 space-y-0.5 text-zinc-300">${items.join('')}</ol>`)
+      continue
+    }
+
+    // paragraph — collect until blank or any block-level marker
+    const para: string[] = []
+    while (i < lines.length) {
+      const l = lines[i]
+      if (
+        !l.trim() ||
+        /^#{1,4}\s/.test(l) ||
+        /^-{3,}$/.test(l.trim()) ||
+        l.trim().startsWith('|') ||
+        /^[-*]\s/.test(l) ||
+        /^\d+\.\s/.test(l)
+      ) break
+      para.push(l); i++
+    }
+    if (para.length) {
+      out.push(`<p class="text-zinc-300 mb-4 leading-relaxed">${inline(para.join('<br />'))}</p>`)
+    }
+  }
+
+  return out.join('\n')
 }

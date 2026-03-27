@@ -84,3 +84,38 @@ input[type='range']::-webkit-slider-thumb {
   border-radius: 4px;
   font-size: 0.875em;
 }
+.prose-dark table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.prose-dark th {
+  color: #71717a;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 16px;
+  border-bottom: 1px solid #1e1e2e;
+  text-align: left;
+  white-space: nowrap;
+}
+.prose-dark td {
+  color: #d4d4e8;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(30, 30, 46, 0.5);
+  vertical-align: top;
+}
+.prose-dark tbody tr:nth-child(odd) {
+  background: rgba(15, 15, 26, 0.3);
+}
+.prose-dark ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0.75rem 0;
+}
+.prose-dark ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 0.75rem 0;
+}
