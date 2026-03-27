@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { BRAND_CONTEXT_KEY, NICHES, PERF_COLORS } from '@/lib/constants'
+import { BRAND_CONTEXT_KEY, NICHES, PERF_COLORS, AD_FORMATS } from '@/lib/constants'
 import type { Ad, BrandContext } from '@/lib/types'
 import { slimAd, cacheCredits, getFormatLabel, getPlatformAbbr } from '@/lib/utils'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
@@ -11,7 +11,9 @@ import Link from 'next/link'
 type Step = 'configure' | 'review' | 'output'
 
 interface Config {
+  query: string
   niche_id: string
+  ad_formats: string[]
   platforms: string[]
   performance_scores: string[]
   per_page: number
@@ -20,7 +22,9 @@ interface Config {
 }
 
 const DEFAULT_CONFIG: Config = {
+  query: '',
   niche_id: '',
+  ad_formats: [],
   platforms: [],
   performance_scores: ['winning', 'optimized'],
   per_page: 20,
@@ -169,19 +173,21 @@ export default function BriefsPage() {
   // ── Step 1: Fetch ads ──────────────────────────────────────────────────────
 
   async function fetchAds() {
-    if (!config.niche_id || config.performance_scores.length === 0) return
+    if ((!config.niche_id && !config.query) || config.performance_scores.length === 0) return
     setFetching(true)
     setError(null)
 
     try {
       const params = new URLSearchParams({
-        niche: config.niche_id,
         performance_scores: config.performance_scores.join(','),
         sort_column: 'days_active',
         sort_direction: 'desc',
         per_page: String(config.per_page),
         page: '1',
       })
+      if (config.query) params.set('query', config.query)
+      if (config.niche_id) params.set('niche', config.niche_id)
+      if (config.ad_formats.length) params.set('ad-format', config.ad_formats.join(','))
       if (config.platforms.length) params.set('platform', config.platforms.join(','))
       if (config.start_date) params.set('start-date', config.start_date)
       if (config.end_date) params.set('end-date', config.end_date)
@@ -233,7 +239,9 @@ export default function BriefsPage() {
     try {
       const niche = NICHES.find(n => n.id === config.niche_id)
       const filterParts = [
-        niche?.label,
+        config.query ? `"${config.query}"` : null,
+        niche?.label ?? null,
+        config.ad_formats.length ? config.ad_formats.map(f => AD_FORMATS.find(af => af.value === f)?.label ?? f).join(', ') : null,
         config.platforms.length ? config.platforms.join(', ') : 'all platforms',
         config.performance_scores.join(', '),
         config.start_date ? `${config.start_date} – ${config.end_date || 'now'}` : 'all time',
@@ -244,7 +252,7 @@ export default function BriefsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slimAds: selected.map(slimAd),
-          niche_label: niche?.label ?? config.niche_id,
+          niche_label: niche?.label ?? config.query ?? 'General',
           filters_summary: filterParts.join(' · '),
           brand_context: brand ?? {},
         }),
@@ -286,6 +294,9 @@ export default function BriefsPage() {
   }
 
   const selectedNiche = NICHES.find(n => n.id === config.niche_id)
+  const briefLabel = config.query
+    ? `"${config.query}"${selectedNiche ? ` · ${selectedNiche.label}` : ''}`
+    : selectedNiche?.label ?? 'All niches'
   const selectedCount = selectedIds.size
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -343,14 +354,30 @@ export default function BriefsPage() {
             <div className="space-y-5">
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                  Niche <span className="text-red-400">*</span>
+                  Keyword Search
+                  <span className="ml-1.5 text-zinc-600 font-normal">(optional if niche selected)</span>
+                </label>
+                <input
+                  type="text"
+                  value={config.query}
+                  onChange={e => setConfig(c => ({ ...c, query: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter' && (config.query || config.niche_id)) fetchAds() }}
+                  placeholder='e.g. "pre-workout" or "creatine supplement"'
+                  className="w-full bg-surface-raised border border-app-border rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  Niche
+                  <span className="ml-1.5 text-zinc-600 font-normal">(optional if keyword entered)</span>
                 </label>
                 <select
                   value={config.niche_id}
                   onChange={e => setConfig(c => ({ ...c, niche_id: e.target.value }))}
                   className="w-full bg-surface-raised border border-app-border rounded-lg px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-accent"
                 >
-                  <option value="">Select a niche...</option>
+                  <option value="">All niches...</option>
                   {NICHES.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
                 </select>
               </div>
@@ -385,6 +412,27 @@ export default function BriefsPage() {
                         className={`text-xs px-3 py-1.5 rounded-full border capitalize transition-all ${active ? 'bg-accent/15 border-accent/40 text-accent' : 'border-app-border text-zinc-500 hover:text-zinc-300'}`}
                       >
                         {p}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">
+                  Ad Format
+                  <span className="ml-1.5 text-zinc-600 font-normal">(optional — leave blank for all)</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {AD_FORMATS.map(f => {
+                    const active = config.ad_formats.includes(f.value)
+                    return (
+                      <button
+                        key={f.value}
+                        onClick={() => setConfig(c => ({ ...c, ad_formats: toggleArr(c.ad_formats, f.value) }))}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition-all ${active ? 'bg-accent/15 border-accent/40 text-accent' : 'border-app-border text-zinc-500 hover:text-zinc-300'}`}
+                      >
+                        {f.label}
                       </button>
                     )
                   })}
@@ -442,7 +490,7 @@ export default function BriefsPage() {
 
             <button
               onClick={fetchAds}
-              disabled={fetching || !config.niche_id || config.performance_scores.length === 0}
+              disabled={fetching || (!config.niche_id && !config.query) || config.performance_scores.length === 0}
               className="mt-6 w-full py-3 bg-accent hover:bg-accent-hover text-white font-medium rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {fetching ? (
@@ -552,7 +600,7 @@ export default function BriefsPage() {
             <div className="flex items-center justify-between mb-6 gap-4">
               <div>
                 <div className="text-xs text-zinc-500 mb-0.5">
-                  {selectedNiche?.label} · {selectedCount} ads analyzed · {new Date().toLocaleDateString()}
+                  {briefLabel} · {selectedCount} ads analyzed · {new Date().toLocaleDateString()}
                 </div>
                 <h2 className="text-lg font-semibold text-white">Creative Brief</h2>
               </div>
