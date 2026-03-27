@@ -6,8 +6,13 @@ hidden = [".next", "node_modules"]
 localPort = 3000
 externalPort = 80
 
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
 [env]
 NODE_ENV = "production"
+PORT = "3000"
 
 [nix]
 channel = "stable-23_11"
