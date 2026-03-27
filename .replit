@@ -1,0 +1,13 @@
+run = "npm install && npm run build && npm start"
+entrypoint = "app/page.tsx"
+hidden = [".next", "node_modules"]
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[env]
+NODE_ENV = "production"
+
+[nix]
+channel = "stable-23_11"
