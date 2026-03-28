@@ -49,6 +49,7 @@ export default function SettingsPage() {
   const [dbAvailable, setDbAvailable] = useState(false)
   const [gethookdStatus, setGethookdStatus] = useState<Status>('idle')
   const [anthropicStatus, setAnthropicStatus] = useState<Status>('idle')
+  const [geminiStatus, setGeminiStatus] = useState<Status>('idle')
   const [creditsInfo, setCreditsInfo] = useState<{ remaining: number } | null>(null)
 
   useEffect(() => {
@@ -82,6 +83,7 @@ export default function SettingsPage() {
   async function checkConnections() {
     setGethookdStatus('loading')
     setAnthropicStatus('loading')
+    setGeminiStatus('loading')
 
     try {
       const res = await fetch('/api/credits')
@@ -104,6 +106,14 @@ export default function SettingsPage() {
       setAnthropicStatus(data.ok ? 'ok' : 'error')
     } catch {
       setAnthropicStatus('error')
+    }
+
+    try {
+      const res = await fetch('/api/ai/gemini-status')
+      const data = await res.json()
+      setGeminiStatus(data.ok ? 'ok' : 'error')
+    } catch {
+      setGeminiStatus('error')
     }
   }
 
@@ -171,6 +181,21 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between">
             <StatusBadge
+              status={geminiStatus}
+              label={
+                geminiStatus === 'ok'
+                  ? 'Gemini API · gemini-2.5-flash-preview · video analysis enabled'
+                  : geminiStatus === 'error'
+                    ? 'Gemini API · Not connected — check GEMINI_API_KEY'
+                    : geminiStatus === 'loading'
+                      ? 'Gemini API · Checking...'
+                      : 'Gemini API'
+              }
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <StatusBadge
               status={anthropicStatus}
               label={
                 anthropicStatus === 'ok'
@@ -188,8 +213,9 @@ export default function SettingsPage() {
         <div className="mt-4 pt-4 border-t border-app-border">
           <p className="text-xs text-zinc-600">
             On Replit: add{' '}
-            <code className="text-zinc-500 bg-surface-raised px-1 py-0.5 rounded">GETHOOKD_API_KEY</code> and{' '}
-            <code className="text-zinc-500 bg-surface-raised px-1 py-0.5 rounded">ANTHROPIC_API_KEY</code>{' '}
+            <code className="text-zinc-500 bg-surface-raised px-1 py-0.5 rounded">GETHOOKD_API_KEY</code>,{' '}
+            <code className="text-zinc-500 bg-surface-raised px-1 py-0.5 rounded">ANTHROPIC_API_KEY</code>, and{' '}
+            <code className="text-zinc-500 bg-surface-raised px-1 py-0.5 rounded">GEMINI_API_KEY</code>{' '}
             in the <strong className="text-zinc-500">Secrets</strong> tab (padlock icon).
             For local dev, copy{' '}
             <code className="text-zinc-500 bg-surface-raised px-1 py-0.5 rounded">.env.example</code> to{' '}

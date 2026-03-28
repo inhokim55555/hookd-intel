@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Ad, BrandContext } from '@/lib/types'
+import { analyzeVideoAdForDna, geminiAvailable } from '@/lib/gemini'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -28,6 +29,7 @@ function buildPrompt(
   brand: BrandContext,
   variationCount: number,
   creativeDirection: string,
+  videoAnalysis?: string,
 ): string {
   const angles = ALL_ANGLES.slice(0, variationCount)
 
@@ -49,6 +51,14 @@ Brand Voice: ${brand.brand_voice || 'Not specified'}`
 ${creativeDirection.trim()}\n`
     : ''
 
+  const videoSection = videoAnalysis
+    ? `GEMINI VIDEO ANALYSIS (what the AI actually saw when watching this ad):
+${videoAnalysis}
+
+---
+`
+    : ''
+
   return `Deconstruct this winning ad and create ${variationCount} completely distinct variations. Each must use a fundamentally different angle, emotional driver, and copy structure — not word swaps, but completely different strategic approaches.
 
 SOURCE AD:
@@ -64,7 +74,7 @@ ${brandSection}
 ${directionSection}
 ---
 
-VARIATION REQUIREMENTS:
+${videoSection}VARIATION REQUIREMENTS:
 Write exactly ${variationCount} variations using these angles in this order:
 ${angles.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 
@@ -109,7 +119,17 @@ export async function POST(req: Request) {
     }
 
     const count = [5, 10, 15].includes(variation_count ?? 0) ? variation_count! : 10
-    const userPrompt = buildPrompt(ad, brand_context ?? {}, count, creative_direction ?? '')
+
+    // Gemini video analysis (graceful degradation — null if unavailable or error)
+    let videoAnalysis: string | undefined
+    const isVideoAd = ad.display_format === 'video' || ad.media?.[0]?.type === 'video'
+    const videoUrl = ad.media?.[0]?.url
+    if (isVideoAd && videoUrl && geminiAvailable()) {
+      const result = await analyzeVideoAdForDna(videoUrl)
+      if (result) videoAnalysis = result
+    }
+
+    const userPrompt = buildPrompt(ad, brand_context ?? {}, count, creative_direction ?? '', videoAnalysis)
 
     const stream = new ReadableStream({
       async start(controller) {

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
+    "@google/genai": "^1.46.0",
     "next": "14.2.29",
     "pg": "^8.20.0",
     "react": "^18",

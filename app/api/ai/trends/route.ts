@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { TrendStats, SlimAd } from '@/lib/types'
+import { analyzeVideoAdsForTrends, geminiAvailable, type VideoRef, type VideoAnalysis } from '@/lib/gemini'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -11,7 +12,13 @@ function buildPrompt(
   platform_filter: string,
   stats: TrendStats,
   top_performers: SlimAd[],
+  videoAnalyses?: VideoAnalysis[],
 ): string {
+  const videoSection =
+    videoAnalyses && videoAnalyses.length > 0
+      ? `\nGEMINI VIDEO ANALYSES (what the AI actually saw when watching top video ads):\n${videoAnalyses.map((a, i) => `Ad #${i + 1}: ${a.analysis}`).join('\n\n')}\n\n---\n`
+      : ''
+
   return `Analyze advertising trends for the ${niche_label} niche based on the following data.
 
 DATE RANGE ANALYZED: ${date_range.start} to ${date_range.end}
@@ -23,7 +30,7 @@ ${JSON.stringify(stats, null, 2)}
 
 TOP 15 PERFORMERS (by days active):
 ${JSON.stringify(top_performers, null, 2)}
-
+${videoSection}
 ---
 
 Generate a trend analysis with exactly these sections:
@@ -53,15 +60,22 @@ Numbered, concrete action items. Not vague advice — specific creative or strat
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { niche_label, date_range, platform_filter, stats, top_performers } = body as {
+    const { niche_label, date_range, platform_filter, stats, top_performers, video_refs } = body as {
       niche_label: string
       date_range: { start: string; end: string }
       platform_filter: string
       stats: TrendStats
       top_performers: SlimAd[]
+      video_refs?: VideoRef[]
     }
 
-    const userPrompt = buildPrompt(niche_label, date_range, platform_filter, stats, top_performers)
+    // Gemini video analyses (graceful degradation)
+    let videoAnalyses: VideoAnalysis[] | undefined
+    if (video_refs && video_refs.length > 0 && geminiAvailable()) {
+      videoAnalyses = await analyzeVideoAdsForTrends(video_refs)
+    }
+
+    const userPrompt = buildPrompt(niche_label, date_range, platform_filter, stats, top_performers, videoAnalyses)
 
     const stream = new ReadableStream({
       async start(controller) {

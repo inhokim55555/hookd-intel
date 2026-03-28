@@ -151,6 +151,7 @@ export default function BriefsPage() {
   const [generating, setGenerating] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [done, setDone] = useState(false)
+  const [activeVideoRefs, setActiveVideoRefs] = useState<Array<{ adId: number; videoUrl: string; mimeType: string }>>([])
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   const [error, setError] = useState<string | null>(null)
@@ -233,6 +234,13 @@ export default function BriefsPage() {
     setElapsed(0)
     setError(null)
 
+    // Build video refs for Gemini analysis
+    const videoRefs = selected
+      .filter(ad => (ad.display_format === 'video' || ad.media?.[0]?.type === 'video') && ad.media?.[0]?.url)
+      .slice(0, 5)
+      .map(ad => ({ adId: ad.id, videoUrl: ad.media[0].url, mimeType: 'video/mp4' }))
+    setActiveVideoRefs(videoRefs)
+
     // Start elapsed timer
     timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000)
 
@@ -255,6 +263,7 @@ export default function BriefsPage() {
           niche_label: niche?.label ?? config.query ?? 'General',
           filters_summary: filterParts.join(' · '),
           brand_context: brand ?? {},
+          video_refs: videoRefs,
         }),
       })
 
@@ -291,6 +300,7 @@ export default function BriefsPage() {
     setOutput('')
     setDone(false)
     setError(null)
+    setActiveVideoRefs([])
   }
 
   const selectedNiche = NICHES.find(n => n.id === config.niche_id)
@@ -646,6 +656,11 @@ export default function BriefsPage() {
                     </span>
                     <span className="text-xs text-zinc-600 font-mono">{formatElapsed(elapsed)}</span>
                   </div>
+                  {activeVideoRefs.length > 0 && !output && (
+                    <p className="text-xs text-violet-400 mb-0.5">
+                      Analyzing {activeVideoRefs.length} video{activeVideoRefs.length !== 1 ? 's' : ''} with Gemini first...
+                    </p>
+                  )}
                   <p className="text-xs text-zinc-600">
                     {output
                       ? 'Text is streaming below — scroll down to read as it generates.'

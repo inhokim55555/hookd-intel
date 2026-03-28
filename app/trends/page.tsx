@@ -210,6 +210,7 @@ export default function TrendsPage() {
   const [loadingAi, setLoadingAi]     = useState(false)
   const [error, setError]             = useState<string | null>(null)
   const [remainingCredits, setRemainingCredits] = useState<number | null>(null)
+  const [analyzeVideos, setAnalyzeVideos] = useState(false)
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
 
@@ -306,6 +307,14 @@ export default function TrendsPage() {
       config.language        ? `language: ${config.language}` : null,
     ].filter(Boolean)
 
+    const videoRefs = analyzeVideos
+      ? [...ads]
+          .sort((a, b) => b.days_active - a.days_active)
+          .filter(ad => (ad.display_format === 'video' || ad.media?.[0]?.type === 'video') && ad.media?.[0]?.url)
+          .slice(0, 5)
+          .map(ad => ({ adId: ad.id, videoUrl: ad.media[0].url, mimeType: 'video/mp4' }))
+      : []
+
     try {
       const res = await fetch('/api/ai/trends', {
         method: 'POST',
@@ -317,6 +326,7 @@ export default function TrendsPage() {
           filters_applied: filterParts.join(' · '),
           stats,
           top_performers:  top15,
+          video_refs:      videoRefs,
         }),
       })
 
@@ -558,6 +568,26 @@ export default function TrendsPage() {
                   {remainingCredits.toLocaleString()} credits remaining
                 </p>
               )}
+
+              {/* Gemini video toggle */}
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div
+                    onClick={() => setAnalyzeVideos(v => !v)}
+                    className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${analyzeVideos ? 'bg-accent' : 'bg-surface-raised border border-app-border'}`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${analyzeVideos ? 'translate-x-4' : 'translate-x-0.5'}`}
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-zinc-300">Analyze Videos with Gemini</span>
+                    <p className="text-[10px] text-zinc-600 mt-0.5">
+                      Upload up to 5 top video ads to Gemini for deeper creative analysis. Adds time but enriches AI insights.
+                    </p>
+                  </div>
+                </label>
+              </div>
             </div>
 
             <button

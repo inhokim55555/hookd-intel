@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { SlimAd, BrandContext } from '@/lib/types'
+import { analyzeVideoAdsForBrief, geminiAvailable, type VideoRef, type VideoAnalysis } from '@/lib/gemini'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -10,6 +11,7 @@ function buildPrompt(
   niche_label: string,
   filters_summary: string,
   brand: BrandContext,
+  videoAnalyses?: VideoAnalysis[],
 ): string {
   const brandSection = brand.brand_name
     ? `BRAND CONTEXT:
@@ -28,9 +30,12 @@ ${brandSection}
 AD DATA:
 ${JSON.stringify(slimAds, null, 2)}
 
+${videoAnalyses && videoAnalyses.length > 0 ? `GEMINI VIDEO ANALYSES (what the AI actually saw when watching these ads):
+${videoAnalyses.map((a, i) => `Ad #${i + 1}: ${a.analysis}`).join('\n\n')}
+
 ---
 
-Generate a creative brief using exactly these sections:
+` : ''}Generate a creative brief using exactly these sections:
 
 ## Market Snapshot
 - Top 5 most active brands in this data set and what they're doing
@@ -81,18 +86,25 @@ Why This Will Work for ${brand.brand_name || 'Your Brand'}:
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { slimAds, niche_label, filters_summary, brand_context } = body as {
+    const { slimAds, niche_label, filters_summary, brand_context, video_refs } = body as {
       slimAds: SlimAd[]
       niche_label: string
       filters_summary: string
       brand_context: BrandContext
+      video_refs?: VideoRef[]
     }
 
     if (!slimAds || slimAds.length === 0) {
       return new Response('No ad data provided', { status: 400 })
     }
 
-    const userPrompt = buildPrompt(slimAds, niche_label, filters_summary, brand_context ?? {})
+    // Gemini video analyses (graceful degradation)
+    let videoAnalyses: VideoAnalysis[] | undefined
+    if (video_refs && video_refs.length > 0 && geminiAvailable()) {
+      videoAnalyses = await analyzeVideoAdsForBrief(video_refs)
+    }
+
+    const userPrompt = buildPrompt(slimAds, niche_label, filters_summary, brand_context ?? {}, videoAnalyses)
 
     const stream = new ReadableStream({
       async start(controller) {

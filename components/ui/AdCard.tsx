@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useState, useRef } from 'react'
 import type { Ad } from '@/lib/types'
 import { truncate, getPlatformAbbr, getFormatLabel } from '@/lib/utils'
@@ -13,7 +12,6 @@ interface Props {
 }
 
 export default function AdCard({ ad, onViewDetails }: Props) {
-  const router = useRouter()
   const [playing, setPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -36,7 +34,11 @@ export default function AdCard({ ad, onViewDetails }: Props) {
 
   function openInDna() {
     sessionStorage.setItem(DNA_SOURCE_AD_KEY, JSON.stringify(ad))
-    router.push('/dna')
+    // Use full page navigation (not router.push) so the DNA page always
+    // mounts fresh and the useEffect re-runs to read from sessionStorage.
+    // router.push does a soft navigation that can restore the cached page
+    // without re-running effects, causing the wrong ad to appear.
+    window.location.href = '/dna'
   }
 
   return (
