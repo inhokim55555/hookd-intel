@@ -7,6 +7,9 @@ import { slimAd, cacheCredits, getFormatLabel, getPlatformAbbr } from '@/lib/uti
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import StreamingOutput from '@/components/ui/StreamingOutput'
 import Link from 'next/link'
+import HistoryPanel from '@/components/ui/HistoryPanel'
+import type { SaveFn } from '@/components/ui/HistoryPanel'
+import type { HistoryItem } from '@/lib/history'
 
 type Step = 'configure' | 'review' | 'output'
 
@@ -156,6 +159,11 @@ export default function BriefsPage() {
 
   const [error, setError] = useState<string | null>(null)
 
+  // History
+  const saveRef = useRef<SaveFn | null>(null)
+  const outputAccumRef = useRef('')
+  const [historyTitle, setHistoryTitle] = useState<string | null>(null)
+
   useEffect(() => {
     const stored = localStorage.getItem(BRAND_CONTEXT_KEY)
     if (stored) {
@@ -233,6 +241,8 @@ export default function BriefsPage() {
     setGenerating(true)
     setElapsed(0)
     setError(null)
+    outputAccumRef.current = ''
+    setHistoryTitle(null)
 
     // Build video refs for Gemini analysis
     const videoRefs = selected
@@ -279,10 +289,36 @@ export default function BriefsPage() {
       while (true) {
         const { done: streamDone, value } = await reader.read()
         if (streamDone) break
-        setOutput(prev => prev + decoder.decode(value, { stream: true }))
+        const decoded = decoder.decode(value, { stream: true })
+        outputAccumRef.current += decoded
+        setOutput(outputAccumRef.current)
       }
 
       setDone(true)
+
+      // Save to history after generation completes
+      if (outputAccumRef.current) {
+        const niche = NICHES.find(n => n.id === config.niche_id)
+        const filterParts = [
+          config.query ? `"${config.query}"` : null,
+          niche?.label ?? null,
+          config.ad_formats.length ? config.ad_formats.map(f => AD_FORMATS.find(af => af.value === f)?.label ?? f).join(', ') : null,
+          config.platforms.length ? config.platforms.join(', ') : 'all platforms',
+          config.performance_scores.join(', '),
+          config.start_date ? `${config.start_date} – ${config.end_date || 'now'}` : 'all time',
+        ].filter(Boolean) as string[]
+
+        saveRef.current?.({
+          title: `${niche?.label ?? config.query ?? 'General'} · ${selected.length} ads`,
+          metadata: {
+            niche_label: niche?.label ?? config.query ?? 'General',
+            filters_summary: filterParts.join(' · '),
+            ad_count: selected.length,
+            video_count: videoRefs.length,
+          },
+          output: outputAccumRef.current,
+        })
+      }
     } catch {
       setError('Something went wrong. Please try again.')
       setStep('review')
@@ -301,12 +337,21 @@ export default function BriefsPage() {
     setDone(false)
     setError(null)
     setActiveVideoRefs([])
+    setHistoryTitle(null)
+  }
+
+  function loadFromHistory(item: HistoryItem) {
+    setOutput(item.output)
+    setDone(true)
+    setGenerating(false)
+    setHistoryTitle(item.title)
+    setStep('output')
   }
 
   const selectedNiche = NICHES.find(n => n.id === config.niche_id)
-  const briefLabel = config.query
+  const briefLabel = historyTitle ?? (config.query
     ? `"${config.query}"${selectedNiche ? ` · ${selectedNiche.label}` : ''}`
-    : selectedNiche?.label ?? 'All niches'
+    : selectedNiche?.label ?? 'All niches')
   const selectedCount = selectedIds.size
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -316,7 +361,7 @@ export default function BriefsPage() {
       <div className="max-w-5xl mx-auto">
 
         {/* Page header + step indicator */}
-        <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">Brief Generator</h1>
             <p className="text-sm text-zinc-500">
@@ -351,6 +396,9 @@ export default function BriefsPage() {
             })}
           </div>
         </div>
+
+        {/* History Panel */}
+        <HistoryPanel type="brief" onLoad={loadFromHistory} saveRef={saveRef} />
 
         {/* ── STEP 1: Configure ── */}
         {step === 'configure' && (
@@ -610,7 +658,7 @@ export default function BriefsPage() {
             <div className="flex items-center justify-between mb-6 gap-4">
               <div>
                 <div className="text-xs text-zinc-500 mb-0.5">
-                  {briefLabel} · {selectedCount} ads analyzed · {new Date().toLocaleDateString()}
+                  {briefLabel} · {historyTitle ? '' : `${selectedCount} ads analyzed · `}{new Date().toLocaleDateString()}
                 </div>
                 <h2 className="text-lg font-semibold text-white">Creative Brief</h2>
               </div>
@@ -627,13 +675,15 @@ export default function BriefsPage() {
                     Copy
                   </button>
                 )}
-                <button
-                  onClick={() => setStep('review')}
-                  disabled={generating}
-                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white border border-app-border rounded-lg transition-colors disabled:opacity-40"
-                >
-                  ← Back to Ads
-                </button>
+                {!historyTitle && (
+                  <button
+                    onClick={() => setStep('review')}
+                    disabled={generating}
+                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white border border-app-border rounded-lg transition-colors disabled:opacity-40"
+                  >
+                    ← Back to Ads
+                  </button>
+                )}
                 <button
                   onClick={reset}
                   className="px-4 py-2 text-sm text-zinc-400 hover:text-white border border-app-border rounded-lg transition-colors"
@@ -681,13 +731,26 @@ export default function BriefsPage() {
             )}
 
             {/* Done indicator */}
-            {done && (
+            {done && !historyTitle && (
               <div className="mb-6 px-5 py-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl flex items-center gap-3">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
                 <span className="text-sm text-emerald-400">
                   Brief complete · generated in {formatElapsed(elapsed)}
+                </span>
+              </div>
+            )}
+
+            {/* History-loaded indicator */}
+            {historyTitle && (
+              <div className="mb-6 px-5 py-3 bg-indigo-500/5 border border-indigo-500/20 rounded-xl flex items-center gap-3">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span className="text-sm text-indigo-400">
+                  Loaded from history: {historyTitle}
                 </span>
               </div>
             )}

@@ -39,3 +39,16 @@ export async function initBrandContextTable(): Promise<void> {
     )
   `)
 }
+
+export async function initHistoryTable(): Promise<void> {
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS generation_history (
+      id         SERIAL PRIMARY KEY,
+      type       VARCHAR(20)  NOT NULL,
+      title      VARCHAR(255) NOT NULL,
+      metadata   JSONB        NOT NULL DEFAULT '{}',
+      output     TEXT         NOT NULL,
+      created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    )
+  `)
+}

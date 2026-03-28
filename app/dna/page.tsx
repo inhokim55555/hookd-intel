@@ -5,10 +5,14 @@ import { useRouter } from 'next/navigation'
 import { BRAND_CONTEXT_KEY, DNA_SOURCE_AD_KEY } from '@/lib/constants'
 import type { Ad, BrandContext, CloneAd } from '@/lib/types'
 import { cacheCredits, getPlatformAbbr, getFormatLabel } from '@/lib/utils'
+import { geminiAvailable } from '@/lib/gemini'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import StreamingOutput from '@/components/ui/StreamingOutput'
 import PerformanceBadge from '@/components/ui/PerformanceBadge'
 import AdCard from '@/components/ui/AdCard'
+import HistoryPanel from '@/components/ui/HistoryPanel'
+import type { SaveFn } from '@/components/ui/HistoryPanel'
+import type { HistoryItem } from '@/lib/history'
 
 type Step = 'select' | 'configure' | 'results'
 
@@ -39,6 +43,11 @@ export default function DnaPage() {
   const [cloneError, setCloneError] = useState<string | null>(null)
   const [pollSeconds, setPollSeconds] = useState(0)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+
+  // History state
+  const saveRef = useRef<SaveFn | null>(null)
+  const copyAccumRef = useRef('')
+  const [historyTitle, setHistoryTitle] = useState<string | null>(null)
 
   // Mini search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -103,6 +112,7 @@ export default function DnaPage() {
     setCloneId(null)
     setCloneError(null)
     setPollSeconds(0)
+    setHistoryTitle(null)
 
     // Start both in parallel
     streamCopyVariations()
@@ -111,6 +121,7 @@ export default function DnaPage() {
 
   async function streamCopyVariations() {
     setLoadingCopy(true)
+    copyAccumRef.current = ''
     try {
       const res = await fetch('/api/ai/dna', {
         method: 'POST',
@@ -131,7 +142,26 @@ export default function DnaPage() {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        setCopyOutput(prev => prev + decoder.decode(value, { stream: true }))
+        const decoded = decoder.decode(value, { stream: true })
+        copyAccumRef.current += decoded
+        setCopyOutput(copyAccumRef.current)
+      }
+
+      // Save to history after streaming completes
+      if (copyAccumRef.current && sourceAd) {
+        const isVideoAd = sourceAd.display_format === 'video' || sourceAd.media?.[0]?.type === 'video'
+        saveRef.current?.({
+          title: `${sourceAd.brand.name} · ${variationCount} Variations`,
+          metadata: {
+            brand: sourceAd.brand.name,
+            platform: sourceAd.platform,
+            format: sourceAd.display_format,
+            variation_count: variationCount,
+            source_ad_title: sourceAd.title,
+            has_gemini: isVideoAd && geminiAvailable(),
+          },
+          output: copyAccumRef.current,
+        })
       }
     } finally {
       setLoadingCopy(false)
@@ -235,20 +265,39 @@ export default function DnaPage() {
     setCloneError(null)
     setSearchResults([])
     setSearchQuery('')
+    setHistoryTitle(null)
+  }
+
+  function loadFromHistory(item: HistoryItem) {
+    setSourceAd(null)
+    setCopyOutput(item.output)
+    setCloneData(null)
+    setCloneError(null)
+    setCloneId(null)
+    setLoadingClone(false)
+    setLoadingCopy(false)
+    setHistoryTitle(item.title)
+    setStep('results')
   }
 
   const isVideoAd = sourceAd?.display_format === 'video' || sourceAd?.media?.[0]?.type === 'video'
+
+  // Suppress unused variable warning for detailAd
+  void detailAd
 
   return (
     <div className="min-h-screen p-6 lg:p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-2xl font-bold text-white mb-1">DNA Multiplier</h1>
           <p className="text-sm text-zinc-500">
             Take one winning ad and generate 10 distinct copy variations + AI visual clones.
           </p>
         </div>
+
+        {/* History Panel */}
+        <HistoryPanel type="dna" onLoad={loadFromHistory} saveRef={saveRef} />
 
         {/* Step 1: Select */}
         {step === 'select' && (
@@ -411,7 +460,7 @@ export default function DnaPage() {
               ) : (
                 <div className="px-3 py-2.5 bg-amber-500/5 border border-amber-500/20 rounded-lg">
                   <p className="text-xs text-amber-400">
-                    No brand context configured. Variations will match the source brand's style.
+                    No brand context configured. Variations will match the source brand&apos;s style.
                   </p>
                 </div>
               )}
@@ -507,9 +556,15 @@ export default function DnaPage() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <div className="text-xs text-zinc-500 mb-0.5">
-                  Source: {sourceAd?.brand.name} · {sourceAd?.performance_score_title}
-                </div>
+                {sourceAd ? (
+                  <div className="text-xs text-zinc-500 mb-0.5">
+                    Source: {sourceAd.brand.name} · {sourceAd.performance_score_title}
+                  </div>
+                ) : historyTitle ? (
+                  <div className="text-xs text-zinc-500 mb-0.5">
+                    Loaded from history: {historyTitle}
+                  </div>
+                ) : null}
                 <h2 className="text-lg font-semibold text-white">{variationCount} Ad Variations</h2>
               </div>
               <div className="flex gap-2">
@@ -605,6 +660,15 @@ export default function DnaPage() {
                   </div>
                 </div>
                 <div className="p-6 max-h-[70vh] overflow-y-auto">
+                  {/* History-loaded state */}
+                  {!sourceAd && !loadingClone && !cloneData && !cloneError && (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="px-4 py-3 bg-zinc-800/50 border border-app-border rounded-lg text-xs text-zinc-500 text-center max-w-xs">
+                        Visual clones are not available for history-loaded generations. Open the source ad in DNA to generate new clones.
+                      </div>
+                    </div>
+                  )}
+
                   {loadingClone && (
                     <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
                       <LoadingSpinner size="lg" />
@@ -635,7 +699,7 @@ export default function DnaPage() {
 
                   {cloneData && (
                     <div className="space-y-6">
-                      {cloneData.prompts.map((prompt, pi) => (
+                      {cloneData.prompts.map((prompt) => (
                         <div key={prompt.id}>
                           {prompt.media.length > 0 ? (
                             <div className="grid grid-cols-2 gap-2">
@@ -659,7 +723,7 @@ export default function DnaPage() {
                     </div>
                   )}
 
-                  {!loadingClone && !cloneData && !cloneError && (
+                  {sourceAd && !loadingClone && !cloneData && !cloneError && (
                     <div className="flex items-center justify-center py-12">
                       <div className="flex items-center gap-3 text-zinc-600">
                         <LoadingSpinner size="sm" />

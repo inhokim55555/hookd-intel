@@ -1,11 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { NICHES, PLATFORMS, AD_FORMATS } from '@/lib/constants'
 import type { Ad, TrendStats } from '@/lib/types'
 import { slimAd, computeTrendStats, cacheCredits } from '@/lib/utils'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import StreamingOutput from '@/components/ui/StreamingOutput'
+import HistoryPanel from '@/components/ui/HistoryPanel'
+import type { SaveFn } from '@/components/ui/HistoryPanel'
+import type { HistoryItem } from '@/lib/history'
 
 type Step = 'configure' | 'fetching' | 'dashboard'
 
@@ -211,6 +214,11 @@ export default function TrendsPage() {
   const [error, setError]             = useState<string | null>(null)
   const [remainingCredits, setRemainingCredits] = useState<number | null>(null)
   const [analyzeVideos, setAnalyzeVideos] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+
+  // History
+  const saveRef = useRef<SaveFn | null>(null)
+  const aiOutputAccumRef = useRef('')
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
 
@@ -223,6 +231,7 @@ export default function TrendsPage() {
     setAds([])
     setStats(null)
     setAiOutput('')
+    setHistoryLoaded(false)
     setProgress({ stage: 'fetching', page: 1, totalPages, adsCollected: 0 })
 
     const allAds: Ad[] = []
@@ -294,6 +303,7 @@ export default function TrendsPage() {
     if (!stats) return
     setLoadingAi(true)
     setAiOutput('')
+    aiOutputAccumRef.current = ''
 
     const niche  = NICHES.find(n => n.id === config.niche_id)
     const top15  = [...ads].sort((a, b) => b.days_active - a.days_active).slice(0, 15).map(slimAd)
@@ -337,11 +347,50 @@ export default function TrendsPage() {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        setAiOutput(prev => prev + decoder.decode(value, { stream: true }))
+        const decoded = decoder.decode(value, { stream: true })
+        aiOutputAccumRef.current += decoded
+        setAiOutput(aiOutputAccumRef.current)
+      }
+
+      // Save to history after streaming completes
+      if (aiOutputAccumRef.current && stats) {
+        const niche = NICHES.find(n => n.id === config.niche_id)
+        const filterParts = [
+          config.query           ? `keyword: "${config.query}"` : null,
+          niche?.label           ? `niche: ${niche.label}`      : null,
+          config.performance_scores.length ? `performance: ${config.performance_scores.join(', ')}` : null,
+          config.ad_formats.length         ? `format: ${config.ad_formats.join(', ')}`              : null,
+          config.platform        ? `platform: ${config.platform}` : null,
+        ].filter(Boolean) as string[]
+
+        saveRef.current?.({
+          title: `${niche?.label ?? config.query ?? 'General'} · ${stats.total_ads} ads`,
+          metadata: {
+            niche_label: niche?.label ?? config.query ?? 'General',
+            filters_applied: filterParts.join(' · '),
+            total_ads: stats.total_ads,
+            platform: config.platform || 'all',
+            video_analyzed: videoRefs.length,
+            stats: stats,
+          },
+          output: aiOutputAccumRef.current,
+        })
       }
     } finally {
       setLoadingAi(false)
     }
+  }
+
+  function loadFromHistory(item: HistoryItem) {
+    setAiOutput(item.output)
+    setHistoryLoaded(true)
+
+    // Restore stats from metadata if available
+    if (item.metadata.stats) {
+      setStats(item.metadata.stats as TrendStats)
+    }
+
+    setStep('dashboard')
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -380,12 +429,15 @@ export default function TrendsPage() {
   return (
     <div className="min-h-screen p-6 lg:p-8">
       <div className="max-w-5xl mx-auto">
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-2xl font-bold text-white mb-1">Trend Radar</h1>
           <p className="text-sm text-zinc-500">
             Analyze 100–300 ads to surface format trends, CTA patterns, and AI-generated insights.
           </p>
         </div>
+
+        {/* History Panel */}
+        <HistoryPanel type="trends" onLoad={loadFromHistory} saveRef={saveRef} />
 
         {/* ── Configure ── */}
         {step === 'configure' && (
@@ -620,12 +672,25 @@ export default function TrendsPage() {
                 <h2 className="text-lg font-semibold text-white">Trend Dashboard</h2>
               </div>
               <button
-                onClick={() => { setStep('configure'); setStats(null); setAds([]); setAiOutput('') }}
+                onClick={() => { setStep('configure'); setStats(null); setAds([]); setAiOutput(''); setHistoryLoaded(false) }}
                 className="shrink-0 text-sm text-zinc-500 hover:text-zinc-300 border border-app-border px-3 py-1.5 rounded-lg transition-colors"
               >
                 New Analysis
               </button>
             </div>
+
+            {/* History-loaded note */}
+            {historyLoaded && (
+              <div className="px-4 py-3 bg-indigo-500/5 border border-indigo-500/20 rounded-xl flex items-center gap-3">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span className="text-xs text-indigo-400">
+                  Loaded from history. Run a new analysis to see updated charts.
+                </span>
+              </div>
+            )}
 
             {/* Stats grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -784,7 +849,7 @@ export default function TrendsPage() {
                 {aiOutput && <StreamingOutput content={aiOutput} autoScroll={loadingAi} />}
                 {!aiOutput && !loadingAi && (
                   <p className="text-sm text-zinc-600">
-                    Click "Generate AI Insights" to have Claude analyze the statistics above and surface actionable opportunities.
+                    Click &quot;Generate AI Insights&quot; to have Claude analyze the statistics above and surface actionable opportunities.
                   </p>
                 )}
               </div>
