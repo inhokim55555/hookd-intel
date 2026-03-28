@@ -27,6 +27,8 @@ export default function DnaPage() {
   // Configure state
   const [aspectRatio, setAspectRatio] = useState('Square')
   const [customPrompt, setCustomPrompt] = useState('')
+  const [creativeDirection, setCreativeDirection] = useState('')
+  const [variationCount, setVariationCount] = useState<5 | 10 | 15>(10)
 
   // Results state
   const [copyOutput, setCopyOutput] = useState('')
@@ -113,7 +115,12 @@ export default function DnaPage() {
       const res = await fetch('/api/ai/dna', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ad: sourceAd, brand_context: brand ?? {} }),
+        body: JSON.stringify({
+          ad: sourceAd,
+          brand_context: brand ?? {},
+          creative_direction: creativeDirection,
+          variation_count: variationCount,
+        }),
       })
 
       if (!res.ok) { setLoadingCopy(false); return }
@@ -254,7 +261,7 @@ export default function DnaPage() {
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') searchAds() }}
-                  placeholder="Search by keyword, brand, or topic..."
+                  placeholder="Search by keyword or brand name (e.g. 'pre-workout')"
                   className="flex-1 bg-surface-raised border border-app-border rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-accent"
                 />
                 <button
@@ -266,11 +273,11 @@ export default function DnaPage() {
                 </button>
               </div>
               <p className="text-xs text-zinc-600 mt-2">
-                Or navigate to the{' '}
+                For best results, use the{' '}
                 <button onClick={() => router.push('/explorer')} className="text-accent underline underline-offset-2">
                   Ad Explorer
                 </button>
-                {' '}and click "Open in DNA" on any ad.
+                {' '}and click "Open in DNA" on any ad — the full ad data transfers automatically.
               </p>
             </div>
 
@@ -366,74 +373,130 @@ export default function DnaPage() {
             </div>
 
             {/* Configure */}
-            <div className="bg-surface-card border border-app-border rounded-2xl p-6">
-              <h2 className="text-sm font-semibold text-white mb-5">Configure Generation</h2>
+            <div className="bg-surface-card border border-app-border rounded-2xl p-6 flex flex-col gap-5">
+              <h2 className="text-sm font-semibold text-white">Configure Generation</h2>
 
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-2">Aspect Ratio for Visual Clones</label>
-                  <div className="space-y-2">
-                    {ASPECT_OPTIONS.map(opt => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setAspectRatio(opt.value)}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-all ${aspectRatio === opt.value ? 'bg-accent/10 border-accent/30 text-white' : 'border-app-border text-zinc-400 hover:text-zinc-200'}`}
-                      >
-                        <span>{opt.label}</span>
-                        <span className="text-xs text-zinc-600">{opt.hint}</span>
-                      </button>
-                    ))}
+              {/* Brand context card */}
+              {brand?.brand_name ? (
+                <div className="rounded-xl border border-app-border bg-surface-raised overflow-hidden">
+                  <div className="px-3 py-2 border-b border-app-border flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider">Brand Voice Active</span>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div>
+                      <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-0.5">Brand</div>
+                      <div className="text-xs text-white font-medium">{brand.brand_name}</div>
+                    </div>
+                    {brand.product_description && (
+                      <div>
+                        <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-0.5">Product</div>
+                        <div className="text-xs text-zinc-300">{brand.product_description}</div>
+                      </div>
+                    )}
+                    {brand.target_audience && (
+                      <div>
+                        <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-0.5">Audience</div>
+                        <div className="text-xs text-zinc-300">{brand.target_audience}</div>
+                      </div>
+                    )}
+                    {brand.brand_voice && (
+                      <div>
+                        <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-0.5">Tone / Voice</div>
+                        <div className="text-xs text-zinc-300">{brand.brand_voice}</div>
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                    Visual Generation Prompt <span className="text-zinc-600 font-normal">(optional)</span>
-                  </label>
-                  <textarea
-                    value={customPrompt}
-                    onChange={e => setCustomPrompt(e.target.value)}
-                    placeholder="e.g., Make it feel premium and minimalist with a dark background..."
-                    rows={3}
-                    className="w-full bg-surface-raised border border-app-border rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-accent resize-none"
-                  />
-                  <p className="text-xs text-zinc-600 mt-1">
-                    Leave blank to auto-generate based on the source ad.
+              ) : (
+                <div className="px-3 py-2.5 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                  <p className="text-xs text-amber-400">
+                    No brand context configured. Variations will match the source brand's style.
                   </p>
                 </div>
+              )}
 
-                {isVideoAd && (
-                  <div className="px-3 py-2.5 bg-amber-500/5 border border-amber-500/15 rounded-lg">
-                    <p className="text-xs text-amber-400">
-                      This is a video ad. Visual cloning works best on image ads — Gethookd will generate images from the video thumbnail. Claude will include detailed storyboard/visual direction in the copy variations.
-                    </p>
-                  </div>
-                )}
-
-                {brand?.brand_name ? (
-                  <div className="px-3 py-2.5 bg-surface-raised border border-app-border rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-0.5">Adapting variations for</div>
-                    <div className="text-xs text-zinc-300 font-medium">{brand.brand_name}</div>
-                  </div>
-                ) : (
-                  <div className="px-3 py-2.5 bg-amber-500/5 border border-amber-500/20 rounded-lg">
-                    <p className="text-xs text-amber-400">
-                      No brand context. Variations will match the source brand's style.
-                    </p>
-                  </div>
-                )}
-
-                <div className="text-xs text-zinc-600 px-1">
-                  This uses approximately 1.5–2 Gethookd credits for visual generation.
-                </div>
-
-                <button
-                  onClick={generate}
-                  className="w-full py-3 bg-accent hover:bg-accent-hover text-white font-medium rounded-xl transition-colors"
-                >
-                  Generate 10 Variations
-                </button>
+              {/* Creative Direction */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  Creative Direction <span className="text-zinc-600 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={creativeDirection}
+                  onChange={e => setCreativeDirection(e.target.value)}
+                  placeholder={'e.g., "Focus on the pre-workout angle" or "Make the tone more aggressive and punchy"'}
+                  rows={3}
+                  className="w-full bg-surface-raised border border-app-border rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-accent resize-none"
+                />
+                <p className="text-xs text-zinc-600 mt-1">Applied across all copy variations.</p>
               </div>
+
+              {/* Variation count */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Number of Variations</label>
+                <div className="flex gap-2">
+                  {([5, 10, 15] as const).map(n => (
+                    <button
+                      key={n}
+                      onClick={() => setVariationCount(n)}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${variationCount === n ? 'bg-accent/10 border-accent/30 text-white' : 'border-app-border text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Aspect ratio */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Aspect Ratio for Visual Clones</label>
+                <div className="space-y-2">
+                  {ASPECT_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setAspectRatio(opt.value)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-all ${aspectRatio === opt.value ? 'bg-accent/10 border-accent/30 text-white' : 'border-app-border text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                      <span>{opt.label}</span>
+                      <span className="text-xs text-zinc-600">{opt.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Visual prompt */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  Visual Generation Prompt <span className="text-zinc-600 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={customPrompt}
+                  onChange={e => setCustomPrompt(e.target.value)}
+                  placeholder="e.g., Make it feel premium and minimalist with a dark background..."
+                  rows={2}
+                  className="w-full bg-surface-raised border border-app-border rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-accent resize-none"
+                />
+                <p className="text-xs text-zinc-600 mt-1">Leave blank to auto-generate from the source ad.</p>
+              </div>
+
+              {isVideoAd && (
+                <div className="px-3 py-2.5 bg-amber-500/5 border border-amber-500/15 rounded-lg">
+                  <p className="text-xs text-amber-400">
+                    Video ad detected. Gethookd will analyze the video before generating images — this can take 60–90s. Visual clones are generated from the thumbnail.
+                  </p>
+                </div>
+              )}
+
+              <div className="text-xs text-zinc-600">
+                Visual generation uses approximately 1.5–2 Gethookd credits.
+              </div>
+
+              <button
+                onClick={generate}
+                className="w-full py-3 bg-accent hover:bg-accent-hover text-white font-medium rounded-xl transition-colors"
+              >
+                Generate {variationCount} Variations
+              </button>
             </div>
           </div>
         )}
@@ -447,7 +510,7 @@ export default function DnaPage() {
                 <div className="text-xs text-zinc-500 mb-0.5">
                   Source: {sourceAd?.brand.name} · {sourceAd?.performance_score_title}
                 </div>
-                <h2 className="text-lg font-semibold text-white">10 Ad Variations</h2>
+                <h2 className="text-lg font-semibold text-white">{variationCount} Ad Variations</h2>
               </div>
               <div className="flex gap-2">
                 {copyOutput && (
@@ -474,17 +537,56 @@ export default function DnaPage() {
               {/* Copy Variations (Claude) */}
               <div className="bg-surface-card border border-app-border rounded-2xl overflow-hidden">
                 <div className="px-6 py-4 border-b border-app-border flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                  <div>
+                  <div className={`w-2 h-2 rounded-full ${loadingCopy ? 'bg-accent animate-pulse' : 'bg-emerald-400'}`} />
+                  <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold text-white">Copy Variations</div>
                     <div className="text-xs text-zinc-500">claude-sonnet-4-6 · extended thinking</div>
                   </div>
+                  {loadingCopy && !copyOutput && (
+                    <div className="text-xs text-zinc-500 tabular-nums">thinking...</div>
+                  )}
+                  {loadingCopy && copyOutput && (
+                    <div className="text-xs text-zinc-500">writing...</div>
+                  )}
                 </div>
                 <div className="p-6 max-h-[70vh] overflow-y-auto">
                   {loadingCopy && !copyOutput && (
-                    <div className="flex items-center gap-3 text-zinc-500">
-                      <LoadingSpinner size="sm" />
-                      <span className="text-sm">Generating 10 variations...</span>
+                    <div className="flex flex-col items-center justify-center py-12 gap-5 text-center">
+                      <div className="relative">
+                        <LoadingSpinner size="lg" />
+                        {isVideoAd && (
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center">
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className="text-black">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        {isVideoAd ? (
+                          <>
+                            <p className="text-sm font-medium text-white mb-1">Analyzing video ad...</p>
+                            <p className="text-xs text-zinc-500 max-w-xs">
+                              Claude is deconstructing the video creative and building {variationCount} distinct angles. This takes 20–40s for video ads.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-medium text-white mb-1">Analyzing ad...</p>
+                            <p className="text-xs text-zinc-500 max-w-xs">
+                              Claude is deconstructing the ad and planning {variationCount} distinct angles. Extended thinking active.
+                            </p>
+                          </>
+                        )}
+                        {creativeDirection && (
+                          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 border border-accent/20 rounded-full">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-accent">
+                              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                            </svg>
+                            <span className="text-[10px] text-accent">Creative direction applied</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   {copyOutput && <StreamingOutput content={copyOutput} autoScroll={loadingCopy} />}
@@ -504,17 +606,19 @@ export default function DnaPage() {
                 </div>
                 <div className="p-6 max-h-[70vh] overflow-y-auto">
                   {loadingClone && (
-                    <div className="flex flex-col items-center justify-center py-12 gap-4">
+                    <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
                       <LoadingSpinner size="lg" />
-                      <div className="text-center">
-                        <p className="text-sm text-zinc-400">Generating visual variations...</p>
-                        <p className="text-xs text-zinc-600 mt-1">{pollSeconds}s elapsed · up to 60s</p>
+                      <div>
+                        {isVideoAd && pollSeconds < 15 ? (
+                          <>
+                            <p className="text-sm font-medium text-white mb-1">Analyzing video...</p>
+                            <p className="text-xs text-zinc-500">Gethookd is processing the video before generating images.</p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-zinc-400">Generating visual variations...</p>
+                        )}
+                        <p className="text-xs text-zinc-600 mt-1.5">{pollSeconds}s elapsed · up to {isVideoAd ? '90' : '60'}s</p>
                       </div>
-                      {isVideoAd && (
-                        <p className="text-xs text-zinc-600 text-center max-w-xs">
-                          Video source detected — generating images from the ad thumbnail.
-                        </p>
-                      )}
                     </div>
                   )}
 
